@@ -1,0 +1,3 @@
+NONE = 0
+IN_LOBBY = 1
+PLAYING = 2
