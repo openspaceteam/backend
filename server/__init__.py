@@ -56,6 +56,14 @@ async def join_lobby(sid, data, client):
 @sio.on("leave_lobby")
 @server.base
 @server.link_client
-async def join_lobby(sid, data, client):
+async def leave_lobby(sid, data, client):
     sio.leave_room(client.sid, "lobby")
     logging.info("{} left lobby".format(sid))
+
+
+@sio.on("join_game")
+@server.base
+@server.link_client
+@server.args(("name", str), ("public", bool))
+async def join_game(sid, data, client):
+    pass
