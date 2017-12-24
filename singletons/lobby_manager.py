@@ -43,10 +43,8 @@ class LobbyManager:
             raise KeyError("This game is not registered")
 
         # Delete game and notify lobby
+        await self._games_by_uuid[game.uuid].notify_lobby_dispose()
         del self._games_by_uuid[game.uuid]
-        await Sio().emit("lobby_disposed", {
-            "game_id": game.uuid
-        }, room="lobby")
 
         logging.info("Removed game {}".format(game.uuid))
 
@@ -65,3 +63,9 @@ class LobbyManager:
 
     def items(self):
         return self._games_by_uuid.items()
+
+    def __getitem__(self, item):
+        return self._games_by_uuid[item]
+
+    def __contains__(self, item):
+        return item in self._games_by_uuid

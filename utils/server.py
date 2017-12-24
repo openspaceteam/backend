@@ -1,3 +1,5 @@
+import logging
+
 import exceptions
 from singletons.client_manager import ClientManager
 from singletons.sio import Sio
@@ -72,11 +74,23 @@ def errors(f):
         try:
             await f(sid, data, *args, **kwargs)
         except exceptions.SocketMissingArgumentsError:
-            Sio().emit('error_missing_arguments', room=sid)
+            logging.error("{} raised missing arguments".format(sid))
+            await Sio().emit('error_missing_arguments', room=sid)
         except exceptions.SocketInvalidArgumentsError:
-            Sio().emit('error_invalid_arguments', room=sid)
+            logging.error("{} raised invalid arguments".format(sid))
+            await Sio().emit('error_invalid_arguments', room=sid)
         except exceptions.SocketUnlinkableClientError:
-            Sio().emit('error_unlinkable_client', room=sid)
+            logging.error("{} raised unlinkable client".format(sid))
+            await Sio().emit('error_unlinkable_client', room=sid)
+        except exceptions.SocketNotInGameError:
+            logging.error("{} raised not in game".format(sid))
+            await Sio().emit('error_not_in_game', room=sid)
+        except exceptions.SocketInGameError:
+            logging.error("{} raised in game".format(sid))
+            await Sio().emit('error_in_game', room=sid)
+        except exceptions.SocketIsNotHostError:
+            logging.error("{} raised is not host".format(sid))
+            await Sio().emit('error_is_not_host', room=sid)
     return wrapper
 
 
@@ -86,6 +100,30 @@ def link_client(f):
             client = ClientManager()[sid]
         except ValueError:
             raise exceptions.SocketUnlinkableClientError()
+        return await f(sid, data, client, *args, **kwargs)
+    return wrapper
+
+
+def client_in_game(f):
+    async def wrapper(sid, data=None, client=None, *args, **kwargs):
+        if client is None or not client.is_in_game:
+            raise exceptions.SocketNotInGameError()
+        return await f(sid, data, client, *args, **kwargs)
+    return wrapper
+
+
+def client_not_in_game(f):
+    async def wrapper(sid, data=None, client=None, *args, **kwargs):
+        if client is None or client.is_in_game:
+            raise exceptions.SocketInGameError()
+        return await f(sid, data, client, *args, **kwargs)
+    return wrapper
+
+
+def client_is_host(f):
+    async def wrapper(sid, data=None, client=None, *args, **kwargs):
+        if client is None or not client.is_host:
+            raise exceptions.SocketIsNotHostError()
         return await f(sid, data, client, *args, **kwargs)
     return wrapper
 
