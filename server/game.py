@@ -1,12 +1,11 @@
-import asyncio
 import logging
 import random
 
 from server import Client
-from server.grid import Grid
 from singletons.lobby_manager import LobbyManager
 from singletons.sio import Sio
 from utils.command_name_generator import CommandNameGenerator
+from utils.grid import Grid
 
 
 class Slot:
