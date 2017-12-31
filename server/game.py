@@ -12,6 +12,8 @@ class Slot:
         self.ready = ready
         self.host = host
 
+        self.grid = None
+
     def sio_slot_info(self):
         return {
             "uid": self.client.uid,
@@ -86,6 +88,8 @@ class Game:
         await self.notify_lobby()
 
         logging.info("{} joined game {}".format(client.sid, self.uuid))
+
+        await self.start()
 
     async def remove_client(self, client):
         if type(client) is not Client:
@@ -205,7 +209,7 @@ class Game:
         await self.notify_game()
 
     async def start(self):
-        if len(self.clients) > 1 and all([x.ready for x in self.clients]):
+        if len(self.clients) > 1 and all([x.ready for x in self.clients]) or True:
             # Game starts
             self.playing = True
 
