@@ -9,16 +9,29 @@ class CommandNameGenerator:
         self.used_adjectives = []
         self.used_verbs = []
 
-    def generate_compound_noun(self):
-        if random.getrandbits(1) == 1:
-            nouns = WordsStorage().MASCULINE["nouns"]
+    def random_noun(self, masculine=None):
+        if masculine is None:
+            masculine = random.getrandbits(1) == 1
+        if masculine:
+            nouns = random.choice([WordsStorage().MASCULINE["rare_nouns"] * 4, WordsStorage().MASCULINE["nouns"]])
         else:
-            nouns = WordsStorage().FEMININE["nouns"]
+            nouns = random.choice([WordsStorage().FEMININE["rare_nouns"] * 4, WordsStorage().FEMININE["nouns"]])
+        return random.choice(nouns).lower()
 
+    def random_adjective(self, masculine=None):
+        if masculine is None:
+            masculine = random.getrandbits(1) == 1
+        if masculine:
+            adjectives = random.choice([WordsStorage().MASCULINE["rare_adjectives"] * 4, WordsStorage().MASCULINE["adjectives"]])
+        else:
+            adjectives = random.choice([WordsStorage().FEMININE["rare_adjectives"] * 4, WordsStorage().FEMININE["adjectives"]])
+        return random.choice(adjectives).lower()
+
+    def generate_compound_noun(self):
         prefix = random.choice(WordsStorage().PREFIXES).lower()
 
         while True:
-            noun = random.choice(nouns).lower()
+            noun = self.random_noun()
             if noun not in self.used_nouns:
                 break
         self.used_nouns.append(noun)
@@ -30,16 +43,10 @@ class CommandNameGenerator:
         return "{}{}".format(prefix, noun)
 
     def generate_noun_adjective(self):
-        if random.getrandbits(1) == 0:
-            nouns = WordsStorage().MASCULINE["nouns"]
-            adjectives = WordsStorage().MASCULINE["adjectives"]
-        else:
-            nouns = WordsStorage().FEMININE["nouns"]
-            adjectives = WordsStorage().FEMININE["adjectives"]
-
         while True:
-            noun = random.choice(nouns)
-            adjective = random.choice(adjectives)
+            masculine = random.getrandbits(1) == 1
+            noun = self.random_noun(masculine)
+            adjective = self.random_adjective(masculine)
             if noun not in self.used_nouns and adjective not in self.used_adjectives:
                 break
         self.used_nouns.append(noun)
