@@ -121,3 +121,11 @@ async def start_game(sid, _, client):
         await client.game.start()
     except RuntimeError:
         logging.warning("{} game wanted to start, but requirements arent met".format(client.game.uuid))
+
+
+@sio.on("intro_done")
+@server.base
+@server.link_client
+@server.client_in_game_in_progress
+async def intro_done(sid, _, client):
+    await client.game.intro_done(client)

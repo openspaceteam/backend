@@ -5,6 +5,7 @@ from aiohttp import web
 from singletons.config import Config
 from singletons.sio import Sio
 import server
+from singletons.words_storage import WordsStorage
 
 HEADER = """
   __  ___  __   ______ _____ ___  __  __ __  
@@ -19,6 +20,9 @@ def main():
     logging.getLogger("aiohttp").setLevel(logging.CRITICAL)
     logging.getLogger().setLevel(logging.DEBUG if Config()["DEBUG"] else logging.INFO)
     print(HEADER)
+
+    # Load words storage
+    WordsStorage().load()
 
     # Create sio and aiohttp server
     app = web.Application()

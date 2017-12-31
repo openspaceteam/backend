@@ -1,15 +1,19 @@
+import asyncio
 import logging
 import random
 
 from server import Client
+from server.grid import Grid
 from singletons.lobby_manager import LobbyManager
 from singletons.sio import Sio
+from utils.command_name_generator import CommandNameGenerator
 
 
 class Slot:
     def __init__(self, client, ready=False, host=False):
         self.client = client
         self.ready = ready
+        self.intro_done = False
         self.host = host
 
         self.grid = None
@@ -27,7 +31,7 @@ class Game:
         self._uuid = None   # implemented as a property
         self.name = name
         self.public = public
-        self.clients = []
+        self.slots = []
         self.max_players = 2
         self.playing = False
 
@@ -59,14 +63,14 @@ class Game:
         #     raise ValueError("This client is already in that lobby")
 
         # Make sure the room is not completely full
-        if len(self.clients) >= self.max_players:
+        if len(self.slots) >= self.max_players:
             await Sio().emit("game_join_fail", {
                 "message": "La partita è piena"
             }, room=client.sid)
             return
 
         # Add the client to this match's clients
-        self.clients.append(Slot(client, host=len(self.clients) == 0))
+        self.slots.append(Slot(client, host=len(self.slots) == 0))
 
         # Enter sio room
         Sio().enter_room(client.sid, self.sio_room)
@@ -81,7 +85,7 @@ class Game:
 
         # Notify other clients (if this is not the first one joining aka the one creating the room)
         # await Sio().emit("client_joined", room=self.sio_room, skip_sid=client.sid)
-        if len(self.clients) > 0:
+        if len(self.slots) > 0:
             await self.notify_game()
 
         # Notify lobby if public
@@ -99,7 +103,7 @@ class Game:
 
         # Get client to remove
         slot_to_remove = None
-        for c in self.clients:
+        for c in self.slots:
             if c.client == client:
                 slot_to_remove = c
 
@@ -107,7 +111,7 @@ class Game:
             raise ValueError("This client is not in that lobby")
 
         # Remove the client
-        self.clients.remove(slot_to_remove)
+        self.slots.remove(slot_to_remove)
 
         # Leave sio room
         Sio().leave_room(client.sid, self.sio_room)
@@ -116,8 +120,8 @@ class Game:
         # await Sio().emit("game_leave_success", room=client.sid)
 
         # Choose another host if host left
-        if slot_to_remove.host and len(self.clients) > 0:
-            new_host = random.choice(self.clients)
+        if slot_to_remove.host and len(self.slots) > 0:
+            new_host = random.choice(self.slots)
             new_host.host = True
             logging.info("{} chosen as new host in game {}".format(client.sid, self.uuid))
 
@@ -140,7 +144,7 @@ class Game:
 
     @property
     def is_empty(self):
-        return len(self.clients) == 0
+        return len(self.slots) == 0
 
     async def notify_lobby(self):
         if self.public:
@@ -158,24 +162,24 @@ class Game:
         return {
             "name": self.name,
             "game_id": self.uuid,
-            "players": len(self.clients),
+            "players": len(self.slots),
             "max_players": self.max_players,
             "public": self.public
         }
 
     def sio_game_info(self):
         return {**self.sio_lobby_info(), **{
-            "slots": [x.sio_slot_info() for x in self.clients] + [None] * (self.max_players - len(self.clients))
+            "slots": [x.sio_slot_info() for x in self.slots] + [None] * (self.max_players - len(self.slots))
         }}
 
     def get_host(self):
-        for x in self.clients:
+        for x in self.slots:
             if x.host:
                 return x
         return None
 
     def get_slot(self, client):
-        for x in self.clients:
+        for x in self.slots:
             if x.client == client:
                 return x
         return None
@@ -209,14 +213,42 @@ class Game:
         await self.notify_game()
 
     async def start(self):
-        if len(self.clients) > 1 and all([x.ready for x in self.clients]) or True:
+        if len(self.slots) > 1 and all([x.ready for x in self.slots]) or True:
             # Game starts
             self.playing = True
 
+            # Set all `intro done` to false
+            # TODO: Do when switching levels
+            for i in self.slots:
+                i.intro_done = False
+
             # Remove game from lobby
             await self.notify_lobby_dispose()
+
+            # Generate grids
+            await self.generate_grids()
 
             # Notify all clients
             await Sio().emit("game_started", room=self.sio_room)
         else:
             raise RuntimeError("Conditions not met for game to start")
+
+    async def intro_done(self, client):
+        if not self.playing:
+            raise RuntimeError("Game not in progress!")
+        slot = self.get_slot(client)
+        if slot is None:
+            raise ValueError("Client not in match")
+        slot.intro_done = True
+        for i in self.slots:
+            if not i.intro_done:
+                return
+
+        # Notify each client about their grid if eveyone has completed intro
+        await Sio().emit("grid", slot.grid.__dict__(), room=slot.client.sid)
+
+    async def generate_grids(self):
+        generator = CommandNameGenerator()
+
+        for slot in self.slots:
+            slot.grid = Grid(generator)

@@ -128,5 +128,13 @@ def client_is_host(f):
     return wrapper
 
 
+def client_in_game_in_progress(f):
+    async def wrapper(sid, data=None, client=None, *args, **kwargs):
+        if client is None or not client.is_in_game or not client.game.playing:
+            raise exceptions.SocketNotInGameError()
+        return await f(sid, data, client, *args, **kwargs)
+    return wrapper
+
+
 def base(f):
     return errors(f)
