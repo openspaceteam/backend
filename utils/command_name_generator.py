@@ -13,18 +13,18 @@ class CommandNameGenerator:
         if masculine is None:
             masculine = random.getrandbits(1) == 1
         if masculine:
-            nouns = random.choice([WordsStorage().MASCULINE["rare_nouns"] * 4, WordsStorage().MASCULINE["nouns"]])
+            nouns = random.choice([WordsStorage().MASCULINE["nouns"] * 4, WordsStorage().MASCULINE["rare_nouns"]])
         else:
-            nouns = random.choice([WordsStorage().FEMININE["rare_nouns"] * 4, WordsStorage().FEMININE["nouns"]])
+            nouns = random.choice([WordsStorage().FEMININE["nouns"] * 4, WordsStorage().FEMININE["rare_nouns"]])
         return random.choice(nouns).lower()
 
     def random_adjective(self, masculine=None):
         if masculine is None:
             masculine = random.getrandbits(1) == 1
         if masculine:
-            adjectives = random.choice([WordsStorage().MASCULINE["rare_adjectives"] * 4, WordsStorage().MASCULINE["adjectives"]])
+            adjectives = random.choice([WordsStorage().MASCULINE["adjectives"] * 4, WordsStorage().MASCULINE["rare_adjectives"]])
         else:
-            adjectives = random.choice([WordsStorage().FEMININE["rare_adjectives"] * 4, WordsStorage().FEMININE["adjectives"]])
+            adjectives = random.choice([WordsStorage().FEMININE["adjectives"] * 4, WordsStorage().FEMININE["rare_adjectives"]])
         return random.choice(adjectives).lower()
 
     def generate_compound_noun(self):
