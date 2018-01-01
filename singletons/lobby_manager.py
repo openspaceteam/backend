@@ -42,8 +42,11 @@ class LobbyManager:
         if game.uuid not in self._games_by_uuid:
             raise KeyError("This game is not registered")
 
-        # Delete game and notify lobby
-        await self._games_by_uuid[game.uuid].notify_lobby_dispose()
+        # Notify lobby if not already in game
+        if not self._games_by_uuid[game.uuid].playing:
+            await self._games_by_uuid[game.uuid].notify_lobby_dispose()
+
+        # Remove game
         del self._games_by_uuid[game.uuid]
 
         logging.info("Removed game {}".format(game.uuid))

@@ -158,7 +158,7 @@ class Game:
 
             # Dispose room if everyone left
             if self.is_empty:
-                await LobbyManager().remove_game(self)
+                await self.dispose()
         logging.info("{} left game {}".format(client.sid, self.uuid))
 
     @property
@@ -260,7 +260,8 @@ class Game:
         Starts the game
         :return:
         """
-        if len(self.slots) > 1 and all([x.ready for x in self.slots]) or True:
+        # NOTE:
+        if len(self.slots) > 1 and all([x.ready for x in self.slots]): # or True:
             # Game starts
             self.playing = True
 
@@ -349,10 +350,6 @@ class Game:
                         The client will play sounds and visual fx accordingly.
         :return:
         """
-        # Remove old instruction as soon as possible
-        if slot.instruction in self.instructions:
-            self.instructions.remove(slot.instruction)
-
         # Stop the old next generation task if needed
         if slot.next_generation_task is not None and stop_old_task:
             slot.next_generation_task.cancel()
@@ -360,15 +357,12 @@ class Game:
         # Choose a random slot and a random command.
         # We don't do this in `Instruction` because we need to access
         # match's properties and passing match and instruction to `Instruction` is not elegant imo
-        # if random.randint(0, 5) == 0:
-        #     # 1/5 chance of getting a command in our board
-        #     target = slot
-        # else:
-        #     # Filter out our slot and chose another one randomly
-        #     target = random.choice(list(filter(lambda z: z != slot, self.slots)))
-
-
-        target = slot
+        if random.randint(0, 5) == 0:
+            # 1/5 chance of getting a command in our grid
+            target = slot
+        else:
+            # Filter out our slot and chose another one randomly
+            target = random.choice(list(filter(lambda z: z != slot, self.slots)))
 
         # Find a random command that is not used in any other instructions at the moment and is not the same as the
         # previous one
@@ -381,12 +375,11 @@ class Game:
             for x in self.instructions + [slot.instruction]:
                 # x is `None` if slot.instructions is None (first generation)
                 if x is not None and x.target_command == command:
-                    print("BECCOOCOCOCO")
                     valid_command = False
                     break
 
         # Set this slot's instruction and notify the client
-        slot.instruction = Instruction(target, command)
+        slot.instruction = Instruction(slot, target, command)
 
         # Add new one
         self.instructions.append(slot.instruction)
@@ -395,7 +388,7 @@ class Game:
             "text": slot.instruction.text,
             "time": self.difficulty["instructions_time"],
             "expired": expired
-        }, room=self.sio_room)
+        }, room=slot.client.sid)
 
         # Schedule a new generation
         slot.next_generation_task = asyncio.Task(self.schedule_generation(slot, self.difficulty["instructions_time"]))
@@ -408,6 +401,12 @@ class Game:
         :return:
         """
         await asyncio.sleep(seconds)
+
+        # Remove expired instruction
+        if slot.instruction in self.instructions:
+            self.instructions.remove(slot.instruction)
+
+        # Generate a new instruction
         await self.generate_instruction(slot, expired=True, stop_old_task=False)  # if True, it would stop itself :|
 
     async def do_command(self, client, command_name, value=None):
@@ -451,8 +450,26 @@ class Game:
             # Useless command
             return
 
+        # Remove old instruction
+        self.instructions.remove(instruction_completed)
+
         # This was an useful command! Force new generation outside the loop
-        await self.generate_instruction(slot, expired=False, stop_old_task=True)
+        await self.generate_instruction(instruction_completed.source, expired=False, stop_old_task=True)
+
+    async def dispose(self):
+        """
+        Disposes the current room
+        :return:
+        """
+        # Remove from lobby
+        await LobbyManager().remove_game(self)
+
+        # Cancel all pending next generation tasks
+        for slot in self.slots:
+            if slot.next_generation_task is not None:
+                logging.info("slot {} generation task cancelled".format(slot))
+                slot.next_generation_task.cancel()
+        logging.info("{} match disposed".format(self.uuid))
 
 
 

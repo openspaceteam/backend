@@ -4,9 +4,10 @@ from utils.grid import Button, SliderLikeElement, Switch, Actions
 
 
 class Instruction:
-    def __init__(self, target, target_command):
-        self.target_command = target_command
+    def __init__(self, source, target, target_command):
+        self.source = source
         self.target = target
+        self.target_command = target_command
         self.value = self.generate_value()  # new value to set the target command to. Only for sliders/switches
         self.text = self.generate_text()    # instruction text, visible to the client
 
@@ -53,7 +54,7 @@ class Instruction:
                 sentences = [
                     "Attivare {name}",
                     "Innestare {name}",
-                    "Acendere {name}",
+                    "Accendere {name}",
                 ]
             else:
                 sentences = [
