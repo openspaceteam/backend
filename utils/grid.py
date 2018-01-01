@@ -42,6 +42,7 @@ class SliderLikeElement(GridElement):
         super(SliderLikeElement, self).__init__(name, x, y, w, h)
         self.min = min_value
         self.max = max_value
+        self.value = self.min
 
     def __dict__(self):
         return {
@@ -84,7 +85,9 @@ class Actions(GridElement):
 
 
 class Switch(GridElement):
-    pass
+    def __init__(self, name, x, y, w, h):
+        super(Switch, self).__init__(name, x, y, w, h)
+        self.toggled = False
 
 TYPES = {
     Button: "button",

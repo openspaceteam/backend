@@ -1,7 +1,9 @@
+import asyncio
 import logging
 import random
 
 from server import Client
+from server.instruction import Instruction
 from singletons.lobby_manager import LobbyManager
 from singletons.sio import Sio
 from utils.command_name_generator import CommandNameGenerator
@@ -16,6 +18,8 @@ class Slot:
         self.host = host
 
         self.grid = None
+        self.instruction = None
+        self.next_generation_task = None
 
     def sio_slot_info(self):
         return {
@@ -28,11 +32,19 @@ class Slot:
 class Game:
     def __init__(self, name, public):
         self._uuid = None   # implemented as a property
+
         self.name = name
+
         self.public = public
-        self.slots = []
         self.max_players = 2
+
+        self.slots = []
         self.playing = False
+        self.instructions = []
+
+        self.difficulty = {
+            "instructions_time": 15
+        }
 
     @property
     def uuid(self):
@@ -54,6 +66,11 @@ class Game:
         self._uuid = uuid
 
     async def join_client(self, client):
+        """
+        Adds a client to the match and notifies match and lobby
+        :param client: `Client` object
+        :return:
+        """
         if self.playing:
             raise RuntimeError("The game is in progress!")
         if type(client) is not Client:
@@ -95,6 +112,13 @@ class Game:
         await self.start()
 
     async def remove_client(self, client):
+        """
+        Removes a client from the match and notifies game and lobby.
+        If the host leaves, a new random host is chosen.
+        If all players leave, the match is disposed.
+        :param client: `Client` object to remove
+        :return:
+        """
         if type(client) is not Client:
             raise TypeError("`client` must be a Client object")
         # if client not in self.clients:
@@ -172,18 +196,33 @@ class Game:
         }}
 
     def get_host(self):
+        """
+        Returns the `Slot` object of this match's host
+        :return: `Slot` object or `None` if there's no host set
+        """
         for x in self.slots:
             if x.host:
                 return x
         return None
 
     def get_slot(self, client):
+        """
+        Get the `Slot` object corresponding to `Client`
+        :param client:
+        :return: `Slot` object or `None` if the client is not in this match
+        """
         for x in self.slots:
             if x.client == client:
                 return x
         return None
 
     async def update_settings(self, size=None, public=None):
+        """
+        Updates game settings and broadcasts events to game and lobby
+        :param size: new size. min 2 max 4. Use `None` to leave untouched.
+        :param public: new public status (True/False). Use `None` to leave untouched.
+        :return:
+        """
         if self.playing:
             raise RuntimeError("Game in progress!")
         visibility_changed = False
@@ -203,6 +242,11 @@ class Game:
             await self.notify_lobby_dispose()
 
     async def ready(self, client):
+        """
+        Toggles `client`'s ready status
+        :param client: `Client` object
+        :return:
+        """
         if self.playing:
             raise RuntimeError("Game in progress!")
         slot = self.get_slot(client)
@@ -212,6 +256,10 @@ class Game:
         await self.notify_game()
 
     async def start(self):
+        """
+        Starts the game
+        :return:
+        """
         if len(self.slots) > 1 and all([x.ready for x in self.slots]) or True:
             # Game starts
             self.playing = True
@@ -233,21 +281,121 @@ class Game:
             raise RuntimeError("Conditions not met for game to start")
 
     async def intro_done(self, client):
+        """
+        Sets that a client has played the intro.
+        When everyone has played the intro, `self.intro_done_all()` is called
+        :param client: `Client` object
+        :return:
+        """
         if not self.playing:
             raise RuntimeError("Game not in progress!")
         slot = self.get_slot(client)
         if slot is None:
             raise ValueError("Client not in match")
+
+        # This client has played the intro
         slot.intro_done = True
+
+        # Check if everyone has played the intro
         for i in self.slots:
             if not i.intro_done:
                 return
+        await self.intro_done_all()
 
+    async def intro_done_all(self):
+        """
+        Called when all clients have played the intro.
+        This emits to all clients their `grid` event and the first `command` event
+        :return:
+        """
         # Notify each client about their grid if eveyone has completed intro
-        await Sio().emit("grid", slot.grid.__dict__(), room=slot.client.sid)
+        for slot in self.slots:
+            await Sio().emit("grid", slot.grid.__dict__(), room=slot.client.sid)
+
+        # TODO: Implement client-side
+        # await Sio().emit("difficulty", self.difficulty, room=self.sio_room)
+        warmup_time = max(int(self.difficulty["instructions_time"] / 5), 3)
+        await Sio().emit("command", {
+            "text": "Prepararsi a ricevere istruzioni",
+            "time": warmup_time
+        }, room=self.sio_room)
+        await asyncio.sleep(warmup_time)
+        for slot in self.slots:
+            await self.generate_instruction(slot)
 
     async def generate_grids(self):
-        generator = CommandNameGenerator()
+        """
+        Generates new `Grid`s for all clients
+        :return:
+        """
+        if not self.playing:
+            raise RuntimeError("Game not in progress!")
+        name_generator = CommandNameGenerator()
 
         for slot in self.slots:
-            slot.grid = Grid(generator)
+            slot.grid = Grid(name_generator)
+
+    async def generate_instruction(self, slot, stop_old_task=True):
+        """
+        Generates and sets a valid and unique Instruction for `Slot` and schedules
+        an asyncio Task to run
+        :param slot: `Slot` object that will be the target of that instruction
+        :param stop_old_task: if `True`, stop the old generation task.
+                              Set to `False` if running in the generation loop, `True` if calling from outside the loop.
+        :return:
+        """
+        # Remove old instruction as soon as possible
+        if slot.instruction in self.instructions:
+            self.instructions.remove(slot.instruction)
+
+        # Stop the old next generation task if needed
+        if slot.next_generation_task is not None and stop_old_task:
+            slot.next_generation_task.cancel()
+
+        # Choose a random slot and a random command.
+        # We don't do this in `Instruction` because we need to access
+        # match's properties and passing match and instruction to `Instruction` is not elegant imo
+        # if random.randint(0, 5) == 0:
+        #     # 1/5 chance of getting a command in our board
+        #     target = slot
+        # else:
+        #     # Filter out our slot and chose another one randomly
+        #     target = random.choice(list(filter(lambda z: z != slot, self.slots)))
+        target = slot
+
+        # Find a random command that is not used in any other instructions at the moment and is not the same as the
+        # previous one
+        while True:
+            command = random.choice(target.grid.objects)
+            for x in self.instructions + [slot.instruction]:
+                # x is `None` if slot.instructions is None (first generation)
+                if x is not None and x.target_command == command:
+                    continue
+            break
+
+        # Set this slot's instruction and notify the client
+        slot.instruction = Instruction(target, command)
+
+        # Add new one
+        self.instructions.append(slot.instruction)
+
+        await Sio().emit("command", {
+            "text": slot.instruction.text,
+            "time": self.difficulty["instructions_time"]
+        })
+
+        # Schedule a new generation
+        slot.next_generation_task = asyncio.Task(self.schedule_generation(slot, self.difficulty["instructions_time"]))
+
+    async def schedule_generation(self, slot, seconds):
+        """
+        Executes a new instruction generation for `slot` after `seconds` have passed
+        :param slot: `Slot` object that will receive the `Instruction`
+        :param seconds: number of seconds to wait
+        :return:
+        """
+        await asyncio.sleep(seconds)
+        await self.generate_instruction(slot, stop_old_task=False)  # if True, it would stop itself :|
+
+
+

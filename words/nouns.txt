@@ -56,7 +56,7 @@ campo magnetico,m
 vibrazione,f
 raggio laser,m
 raggio,m
-laser,f
+laser,m
 fotointerruttore,m
 buzzer,m
 sensore analogico,m
