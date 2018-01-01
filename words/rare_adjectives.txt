@@ -101,5 +101,5 @@ vuoto,vuota
 votato
 variegato,variegata
 zodiacale
-zootecnico
-zuccherato
+zootecnico,zootecnica
+zuccherato,zuccherata

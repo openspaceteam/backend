@@ -7,7 +7,7 @@ from server.instruction import Instruction
 from singletons.lobby_manager import LobbyManager
 from singletons.sio import Sio
 from utils.command_name_generator import CommandNameGenerator
-from utils.grid import Grid
+from utils.grid import Grid, Button, SliderLikeElement, Actions, Switch
 
 
 class Slot:
@@ -335,13 +335,18 @@ class Game:
         for slot in self.slots:
             slot.grid = Grid(name_generator)
 
-    async def generate_instruction(self, slot, stop_old_task=True):
+    async def generate_instruction(self, slot, expired=None, stop_old_task=True):
         """
         Generates and sets a valid and unique Instruction for `Slot` and schedules
         an asyncio Task to run
         :param slot: `Slot` object that will be the target of that instruction
         :param stop_old_task: if `True`, stop the old generation task.
                               Set to `False` if running in the generation loop, `True` if calling from outside the loop.
+        :param expired: Send this to the client with the new instruction.
+                        If `True`, the old instruction expired.
+                        If `False`, the old instruction was successful.
+                        If `None` (or not present), not specified.
+                        The client will play sounds and visual fx accordingly.
         :return:
         """
         # Remove old instruction as soon as possible
@@ -361,17 +366,24 @@ class Game:
         # else:
         #     # Filter out our slot and chose another one randomly
         #     target = random.choice(list(filter(lambda z: z != slot, self.slots)))
+
+
         target = slot
 
         # Find a random command that is not used in any other instructions at the moment and is not the same as the
         # previous one
-        while True:
+        valid_command = False
+        while not valid_command:
+            valid_command = True
             command = random.choice(target.grid.objects)
+            print(self.instructions + [slot.instruction])
+            print(slot.instruction)
             for x in self.instructions + [slot.instruction]:
                 # x is `None` if slot.instructions is None (first generation)
                 if x is not None and x.target_command == command:
-                    continue
-            break
+                    print("BECCOOCOCOCO")
+                    valid_command = False
+                    break
 
         # Set this slot's instruction and notify the client
         slot.instruction = Instruction(target, command)
@@ -381,8 +393,9 @@ class Game:
 
         await Sio().emit("command", {
             "text": slot.instruction.text,
-            "time": self.difficulty["instructions_time"]
-        })
+            "time": self.difficulty["instructions_time"],
+            "expired": expired
+        }, room=self.sio_room)
 
         # Schedule a new generation
         slot.next_generation_task = asyncio.Task(self.schedule_generation(slot, self.difficulty["instructions_time"]))
@@ -395,7 +408,52 @@ class Game:
         :return:
         """
         await asyncio.sleep(seconds)
-        await self.generate_instruction(slot, stop_old_task=False)  # if True, it would stop itself :|
+        await self.generate_instruction(slot, expired=True, stop_old_task=False)  # if True, it would stop itself :|
+
+    async def do_command(self, client, command_name, value=None):
+        if not self.playing:
+            raise RuntimeError("Game not in progress!")
+        slot = self.get_slot(client)
+        if slot is None:
+            raise ValueError("Client not in match")
+
+        # Make sure the command is valid
+        command = None
+        for c in slot.grid.objects:
+            if c.name.lower() == command_name:
+                command = c
+        if command is None:
+            raise ValueError("Command not found")
+
+        # Make sure value is valid
+        if type(command) is Button and value is not None:
+            raise ValueError("Invalid value, must be None")
+        elif issubclass(type(command), SliderLikeElement) and type(value) is not int and (value < command.min or value > command.max):
+            raise ValueError("Invalid value, must be an int between min and max")
+        elif type(command) is Actions and type(value) is not str and value.lower() not in command.actions:
+            raise ValueError("Invalid value, must be a valid action")
+        elif type(command) is Switch and type(value) is not bool:
+            raise ValueError("Invalid value, must be a bool")
+
+        # Update status if it's a slider or switch
+        if issubclass(type(command), SliderLikeElement):
+            command.value = value
+        elif type(command) is Switch:
+            command.toggled = value
+
+        # Check if this command completes an instruction
+        instruction_completed = None
+        for instruction in self.instructions:
+            if instruction.target_command.name.lower() == command_name.lower() and instruction.value == value:
+                instruction_completed = instruction
+
+        if instruction_completed is None:
+            # Useless command
+            return
+
+        # This was an useful command! Force new generation outside the loop
+        await self.generate_instruction(slot, expired=False, stop_old_task=True)
+
 
 
 

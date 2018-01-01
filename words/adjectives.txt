@@ -9,7 +9,7 @@ istantaneo
 stellare
 interstellare
 spaziale
-galattico
+galattico,galattica
 solare
 lunare
 stellare

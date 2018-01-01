@@ -20,6 +20,8 @@ class Instruction:
         elif type(self.target_command) is Switch:
             # If it's a switch, flip it
             return not self.target_command.toggled
+        elif type(self.target_command) is Actions:
+            return random.choice(self.target_command.actions)
 
     def generate_text(self):
         if type(self.target_command) is Button:
@@ -37,7 +39,12 @@ class Instruction:
             if self.value > self.target_command.value:
                 sentences.append("Aumentare {name} a {value}")
             else:
-                sentences.append("Diminuire {name} a {value}")
+                sentences += ["Diminuire {name} a {value}", "Ridurre {name} a {value}"]
+
+            if self.value == self.target_command.max:
+                sentences += ["Aumentare {name} al massimo", "Impostare {name} al massimo"]
+            elif self.value == self.target_command.min:
+                sentences += ["Diminuire {name} al minimo", "Impostare {name} al minimo"]
         elif type(self.target_command) is Actions:
             sentences = ["{value} {name}"]
         else:
@@ -57,4 +64,4 @@ class Instruction:
 
         # Choose a random sentence form the possible ones and format it
         sentence = random.choice(sentences)
-        return sentence.format(name=self.target_command.name, value=self.value)
+        return sentence.format(name=self.target_command.name, value=self.value).capitalize()

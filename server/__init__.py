@@ -129,3 +129,13 @@ async def start_game(sid, _, client):
 @server.client_in_game_in_progress
 async def intro_done(sid, _, client):
     await client.game.intro_done(client)
+
+
+@sio.on("command")
+@server.base
+@server.link_client
+@server.client_in_game_in_progress
+@server.args(("name", str))
+async def command(sid, data, client):
+    print("Got", data)
+    await client.game.do_command(client, data["name"], data["value"] if "value" in data else None)
