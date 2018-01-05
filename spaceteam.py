@@ -19,6 +19,12 @@ HEADER = """
 def main():
     logging.getLogger("aiohttp").setLevel(logging.CRITICAL)
     logging.getLogger().setLevel(logging.DEBUG if Config()["DEBUG"] else logging.INFO)
+
+    # Debug alert
+    if Config()["DEBUG"]:
+        logging.debug("Running in debug mode")
+
+    # ASCII art
     print(HEADER)
 
     # Load words storage

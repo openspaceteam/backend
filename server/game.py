@@ -30,6 +30,9 @@ class Slot:
 
 
 class Game:
+    STARTING_HEALTH = 50
+    HEALTH_LOOP_RATE = 2
+
     def __init__(self, name, public):
         self._uuid = None   # implemented as a property
 
@@ -43,8 +46,17 @@ class Game:
         self.instructions = []
 
         self.level = -1
+        self.health = self.STARTING_HEALTH
+        self.death_limit = 0
+
+        self.health_drain_task = None
+
         self.difficulty = {
-            "instructions_time": 25
+            "instructions_time": 25,
+            "health_drain_rate": 0.5,
+            "death_limit_increase_rate": 0.05,
+            "completed_instruction_health_increase": 10,
+            "useless_command_health_decrease": 0
         }
 
     @property
@@ -283,12 +295,37 @@ class Game:
         sets game modifiera and generates new grids
         :return:
         """
+        # Stop drain loop task
+        if self.health_drain_task is not None:
+            self.health_drain_task.cancel()
+
+        # Stop all command generation loop tasks
+        for slot in self.slots:
+            if slot.next_generation_task is not None:
+                slot.next_generation_task.cancel()
+
         # Go to next level
         self.level += 1
+
+        # Reset health
+        self.health = self.STARTING_HEALTH
 
         # Change difficulty settings if this is not the first level
         if self.level > 0:
             self.difficulty["instructions_time"] = max(7.0, self.difficulty["instructions_time"] - 2.5)
+            self.difficulty["health_drain_rate"] = max(1.75, self.difficulty["health_drain_rate"] - 0.25)
+            self.difficulty["death_limit_increase_rate"] = max(1.8, self.difficulty["death_limit_increase_rate"] + 0.2)
+            self.difficulty["completed_instruction_health_increase"] = max(
+                4.7,
+                self.difficulty["completed_instruction_health_increase"] - 0.25
+            )
+
+            if self.level > 10:
+                self.difficulty["useless_command_health_decrease"] = min(
+                    2.5,
+                    self.difficulty["useless_command_health_decrease"] + 0.1
+                )
+            logging.debug("Current difficulty: {}".format(self.difficulty))
 
         # TODO: Game modifiers
 
@@ -345,16 +382,22 @@ class Game:
         for slot in self.slots:
             await Sio().emit("grid", slot.grid.__dict__(), room=slot.client.sid)
 
-        # TODO: Implement client-side
-        # await Sio().emit("difficulty", self.difficulty, room=self.sio_room)
+        # Warmup dummy instruction
         warmup_time = max(int(self.difficulty["instructions_time"] / 5), 3)
         await Sio().emit("command", {
             "text": "Prepararsi a ricevere istruzioni",
             "time": warmup_time
         }, room=self.sio_room)
+
+        # Wait until the dummy instruction expires
         await asyncio.sleep(warmup_time)
+
+        # Generate first command for each slot, starting the regeneration loop as well
         for slot in self.slots:
             await self.generate_instruction(slot)
+
+        # Star the health drain task too
+        self.health_drain_task = asyncio.Task(self.health_drain_loop())
 
     async def generate_instruction(self, slot, expired=None, stop_old_task=True):
         """
@@ -431,6 +474,31 @@ class Game:
         # Generate a new instruction
         await self.generate_instruction(slot, expired=True, stop_old_task=False)  # if True, it would stop itself :|
 
+    async def health_drain_loop(self):
+        while True:
+            # Drain health every two seconds second
+            await asyncio.sleep(self.HEALTH_LOOP_RATE)
+            self.health -= self.difficulty["health_drain_rate"] * self.HEALTH_LOOP_RATE
+            self.death_limit += min(90, self.difficulty["death_limit_increase_rate"] * self.HEALTH_LOOP_RATE)
+            logging.debug("Draining health, new value {}".format(self.health))
+
+            if self.health <= self.death_limit:
+                # Game over
+                await self.game_over()
+                break
+            else:
+                # Game still in progress, broadcast new health
+                await self.notify_health()
+
+    async def game_over(self):
+        logging.info("GAME OVER COL BECCO WOWO")
+
+    async def notify_health(self):
+        await Sio().emit("health_info", {
+            "health": self.health,
+            "death_limit": self.death_limit
+        }, room=self.sio_room)
+
     async def do_command(self, client, command_name, value=None):
         """
         Called when someone does something on a command on their grid
@@ -477,15 +545,30 @@ class Game:
                 instruction_completed = instruction
 
         if instruction_completed is None:
-            # Useless command
-            # TODO: Penality in higher levels
+            # Useless command, apply penality
+            self.health -= self.difficulty["useless_command_health_decrease"]
             return
 
         # Remove old instruction
         self.instructions.remove(instruction_completed)
 
-        # This was an useful command! Force new generation outside the loop
-        await self.generate_instruction(instruction_completed.source, expired=False, stop_old_task=True)
+        # Increase health
+        self.health += self.difficulty["completed_instruction_health_increase"]
+
+        # Broadcast new health or next level
+        if self.health >= 100:
+            # TODO: Game modifiers
+            await Sio().emit("next_level", {
+                "level": self.level,
+                "modifier": None,
+                "text": "Nessuna anomalia rilevata"
+            }, room=self.sio_room)
+            await self.next_level()
+        else:
+            # This was an useful command! Force new generation outside the loop
+            await self.generate_instruction(instruction_completed.source, expired=False, stop_old_task=True)
+
+            await self.notify_health()
 
     async def dispose(self):
         """
@@ -498,8 +581,14 @@ class Game:
         # Cancel all pending next generation tasks
         for slot in self.slots:
             if slot.next_generation_task is not None:
-                logging.info("slot {} generation task cancelled".format(slot))
+                logging.debug("slot {} generation task cancelled".format(slot))
                 slot.next_generation_task.cancel()
+
+        # Cancel health drain task too
+        if self.health_drain_task is not None:
+            logging.debug("Health drain task cancelled")
+            self.health_drain_task.cancel()
+
         logging.info("{} match disposed".format(self.uuid))
 
 
