@@ -42,8 +42,9 @@ class Game:
         self.playing = False
         self.instructions = []
 
+        self.level = -1
         self.difficulty = {
-            "instructions_time": 15
+            "instructions_time": 25
         }
 
     @property
@@ -261,25 +262,56 @@ class Game:
         :return:
         """
         # NOTE:
-        if len(self.slots) > 1 and all([x.ready for x in self.slots]): # or True:
+        if len(self.slots) > 1 and all([x.ready for x in self.slots]) or True:
             # Game starts
             self.playing = True
-
-            # Set all `intro done` to false
-            # TODO: Do when switching levels
-            for i in self.slots:
-                i.intro_done = False
 
             # Remove game from lobby
             await self.notify_lobby_dispose()
 
-            # Generate grids
-            await self.generate_grids()
+            # First level
+            await self.next_level()
 
             # Notify all clients
             await Sio().emit("game_started", room=self.sio_room)
         else:
             raise RuntimeError("Conditions not met for game to start")
+
+    async def next_level(self):
+        """
+        Changes level, difficulty, resets intro done,
+        sets game modifiera and generates new grids
+        :return:
+        """
+        # Go to next level
+        self.level += 1
+
+        # Change difficulty settings if this is not the first level
+        if self.level > 0:
+            self.difficulty["instructions_time"] = max(7.0, self.difficulty["instructions_time"] - 2.5)
+
+        # TODO: Game modifiers
+
+        # Set all `intro done` to false
+        for i in self.slots:
+            i.intro_done = False
+
+        # Generate grids
+        await self.generate_grids()
+
+        # TODO: Broadcast game modifiers (if not first level?)
+
+    async def generate_grids(self):
+        """
+        Generates new `Grid`s for all clients
+        :return:
+        """
+        if not self.playing:
+            raise RuntimeError("Game not in progress!")
+        name_generator = CommandNameGenerator()
+
+        for slot in self.slots:
+            slot.grid = Grid(name_generator)
 
     async def intro_done(self, client):
         """
@@ -324,18 +356,6 @@ class Game:
         for slot in self.slots:
             await self.generate_instruction(slot)
 
-    async def generate_grids(self):
-        """
-        Generates new `Grid`s for all clients
-        :return:
-        """
-        if not self.playing:
-            raise RuntimeError("Game not in progress!")
-        name_generator = CommandNameGenerator()
-
-        for slot in self.slots:
-            slot.grid = Grid(name_generator)
-
     async def generate_instruction(self, slot, expired=None, stop_old_task=True):
         """
         Generates and sets a valid and unique Instruction for `Slot` and schedules
@@ -356,13 +376,14 @@ class Game:
 
         # Choose a random slot and a random command.
         # We don't do this in `Instruction` because we need to access
-        # match's properties and passing match and instruction to `Instruction` is not elegant imo
-        if random.randint(0, 5) == 0:
-            # 1/5 chance of getting a command in our grid
-            target = slot
-        else:
-            # Filter out our slot and chose another one randomly
-            target = random.choice(list(filter(lambda z: z != slot, self.slots)))
+        # match's properties and passing match and next_levelinstruction to `Instruction` is not elegant imo
+        # if random.randint(0, 5) == 0:
+        #     # 1/5 chance of getting a command in our grid
+        #     target = slot
+        # else:
+        #     # Filter out our slot and chose another one randomly
+        #     target = random.choice(list(filter(lambda z: z != slot, self.slots)))
+        target = slot
 
         # Find a random command that is not used in any other instructions at the moment and is not the same as the
         # previous one
@@ -384,6 +405,7 @@ class Game:
         # Add new one
         self.instructions.append(slot.instruction)
 
+        # Notify the client about the new command and the status of the old command
         await Sio().emit("command", {
             "text": slot.instruction.text,
             "time": self.difficulty["instructions_time"],
@@ -410,6 +432,14 @@ class Game:
         await self.generate_instruction(slot, expired=True, stop_old_task=False)  # if True, it would stop itself :|
 
     async def do_command(self, client, command_name, value=None):
+        """
+        Called when someone does something on a command on their grid
+        :param client: `Client` object, must be in game
+        :param command_name: changed command name, case insensitive
+        :param value: command value, required only for slider-like, actions and switches commands
+        :return:
+        """
+        # Playing/player checks
         if not self.playing:
             raise RuntimeError("Game not in progress!")
         slot = self.get_slot(client)
@@ -448,6 +478,7 @@ class Game:
 
         if instruction_completed is None:
             # Useless command
+            # TODO: Penality in higher levels
             return
 
         # Remove old instruction
