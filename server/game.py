@@ -275,7 +275,7 @@ class Game:
         :return:
         """
         # NOTE:
-        if len(self.slots) > 1 and all([x.ready for x in self.slots]) or True:
+        if len(self.slots) > 1 and all([x.ready for x in self.slots]): # or True:
             # Game starts
             self.playing = True
 
@@ -425,13 +425,13 @@ class Game:
         # Choose a random slot and a random command.
         # We don't do this in `Instruction` because we need to access
         # match's properties and passing match and next_levelinstruction to `Instruction` is not elegant imo
-        # if random.randint(0, 5) == 0:
-        #     # 1/5 chance of getting a command in our grid
-        #     target = slot
-        # else:
-        #     # Filter out our slot and chose another one randomly
-        #     target = random.choice(list(filter(lambda z: z != slot, self.slots)))
-        target = slot
+        if random.randint(0, 5) == 0:
+            # 1/5 chance of getting a command in our grid
+            target = slot
+        else:
+            # Filter out our slot and chose another one randomly
+            target = random.choice(list(filter(lambda z: z != slot, self.slots)))
+        # target = slot
 
         # Find a random command that is not used in any other instructions at the moment and is not the same as the
         # previous one
