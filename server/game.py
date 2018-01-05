@@ -56,7 +56,8 @@ class Game:
             "health_drain_rate": 0.5,
             "death_limit_increase_rate": 0.05,
             "completed_instruction_health_increase": 10,
-            "useless_command_health_decrease": 0
+            "useless_command_health_decrease": 0,
+            "expired_command_health_decrease": 5
         }
 
     @property
@@ -312,17 +313,21 @@ class Game:
 
         # Change difficulty settings if this is not the first level
         if self.level > 0:
-            self.difficulty["instructions_time"] = max(7.0, self.difficulty["instructions_time"] - 2.5)
-            self.difficulty["health_drain_rate"] = max(1.75, self.difficulty["health_drain_rate"] - 0.25)
-            self.difficulty["death_limit_increase_rate"] = max(1.8, self.difficulty["death_limit_increase_rate"] + 0.2)
+            self.difficulty["instructions_time"] = max(7.0, self.difficulty["instructions_time"] - 2.75)
+            self.difficulty["health_drain_rate"] = max(1.75, self.difficulty["health_drain_rate"] - 0.35)
+            self.difficulty["death_limit_increase_rate"] = max(1.8, self.difficulty["death_limit_increase_rate"] + 0.35)
             self.difficulty["completed_instruction_health_increase"] = max(
-                4.7,
-                self.difficulty["completed_instruction_health_increase"] - 0.25
+                3.0,
+                self.difficulty["completed_instruction_health_increase"] - 0.5
+            )
+            self.difficulty["expired_command_health_decrease"] = min(
+                20.0,
+                self.difficulty["expired_command_health_decrease"] + 0.25
             )
 
-            if self.level > 10:
+            if self.level > 5:
                 self.difficulty["useless_command_health_decrease"] = min(
-                    2.5,
+                    2.25,
                     self.difficulty["useless_command_health_decrease"] + 0.1
                 )
             logging.debug("Current difficulty: {}".format(self.difficulty))
@@ -471,6 +476,9 @@ class Game:
         if slot.instruction in self.instructions:
             self.instructions.remove(slot.instruction)
 
+        # Drain health
+        self.health -= self.difficulty["expired_command_health_decrease"]
+
         # Generate a new instruction
         await self.generate_instruction(slot, expired=True, stop_old_task=False)  # if True, it would stop itself :|
 
@@ -567,7 +575,7 @@ class Game:
         else:
             # This was an useful command! Force new generation outside the loop
             await self.generate_instruction(instruction_completed.source, expired=False, stop_old_task=True)
-
+            # await Sio().emit('flip_grid', room=self.sio_room)
             await self.notify_health()
 
     async def dispose(self):
