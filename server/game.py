@@ -558,12 +558,12 @@ class Game:
         # Broadcast new health or next level
         if self.health >= 100:
             # TODO: Game modifiers
+            await self.next_level()
             await Sio().emit("next_level", {
                 "level": self.level,
                 "modifier": None,
                 "text": "Nessuna anomalia rilevata"
             }, room=self.sio_room)
-            await self.next_level()
         else:
             # This was an useful command! Force new generation outside the loop
             await self.generate_instruction(instruction_completed.source, expired=False, stop_old_task=True)
