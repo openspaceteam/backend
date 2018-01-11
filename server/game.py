@@ -32,6 +32,7 @@ class Slot:
 class Game:
     STARTING_HEALTH = 50
     HEALTH_LOOP_RATE = 2
+    MAX_PLAYERS = 4
 
     def __init__(self, name, public):
         self._uuid = None   # implemented as a property
@@ -240,7 +241,7 @@ class Game:
         if self.playing:
             raise RuntimeError("Game in progress!")
         visibility_changed = False
-        if size is not None and 2 <= size <= 4:
+        if size is not None and 2 <= size <= self.MAX_PLAYERS:
             self.max_players = size
         if public is not None:
             self.public = public
@@ -499,7 +500,8 @@ class Game:
                 await self.notify_health()
 
     async def game_over(self):
-        logging.info("GAME OVER COL BECCO WOWO")
+        await Sio().emit("game_over", room=self.sio_room)
+        logging.info("{} game over".format(self.uuid))
 
     async def notify_health(self):
         await Sio().emit("health_info", {
