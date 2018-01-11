@@ -23,6 +23,8 @@ def main():
     # Debug alert
     if Config()["DEBUG"]:
         logging.debug("Running in debug mode")
+    if Config()["SINGLE_PLAYER"]:
+        logging.debug("Running in single player mode")
 
     # ASCII art
     print(HEADER)

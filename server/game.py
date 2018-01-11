@@ -4,6 +4,7 @@ import random
 
 from server import Client
 from server.instruction import Instruction
+from singletons.config import Config
 from singletons.lobby_manager import LobbyManager
 from singletons.sio import Sio
 from utils.command_name_generator import CommandNameGenerator
@@ -275,8 +276,7 @@ class Game:
         Starts the game
         :return:
         """
-        # NOTE:
-        if len(self.slots) > 1 and all([x.ready for x in self.slots]) or True:
+        if len(self.slots) > 1 and all([x.ready for x in self.slots]) or Config()["SINGLE_PLAYER"]:
             # Game starts
             self.playing = True
 
@@ -424,16 +424,19 @@ class Game:
         if slot.next_generation_task is not None and stop_old_task:
             slot.next_generation_task.cancel()
 
-        # # Choose a random slot and a random command.
-        # # We don't do this in `Instruction` because we need to access
-        # # match's properties and passing match and next_levelinstruction to `Instruction` is not elegant imo
-        # if random.randint(0, 5) == 0:
-        #     # 1/5 chance of getting a command in our grid
-        #     target = slot
-        # else:
-        #     # Filter out our slot and chose another one randomly
-        #     target = random.choice(list(filter(lambda z: z != slot, self.slots)))
-        target = slot
+        if Config()["SINGLE_PLAYER"]:
+            # Single player debug mode
+            target = slot
+        else:
+            # Choose a random slot and a random command.
+            # We don't do this in `Instruction` because we need to access
+            # match's properties and passing match and next_levelinstruction to `Instruction` is not elegant imo
+            if random.randint(0, 5) == 0:
+                # 1/5 chance of getting a command in our grid
+                target = slot
+            else:
+                # Filter out our slot and chose another one randomly
+                target = random.choice(list(filter(lambda z: z != slot, self.slots)))
 
         # Find a random command that is not used in any other instructions at the moment and is not the same as the
         # previous one
