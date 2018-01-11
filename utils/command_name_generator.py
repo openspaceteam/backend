@@ -9,6 +9,7 @@ class CommandNameGenerator:
         self.used_adjectives = []
         self.used_verbs = []
 
+    # TODO: Make static
     def random_noun(self, masculine=None):
         if masculine is None:
             masculine = random.getrandbits(1) == 1
@@ -18,6 +19,7 @@ class CommandNameGenerator:
             nouns = random.choice([WordsStorage().FEMININE["nouns"] * 4, WordsStorage().FEMININE["rare_nouns"]])
         return random.choice(nouns).lower()
 
+    # TODO: Make static
     def random_adjective(self, masculine=None):
         if masculine is None:
             masculine = random.getrandbits(1) == 1

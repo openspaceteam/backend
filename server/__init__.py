@@ -139,3 +139,21 @@ async def intro_done(sid, _, client):
 async def command(sid, data, client):
     print("Got", data)
     await client.game.do_command(client, data["name"], data["value"] if "value" in data else None)
+
+
+@sio.on("defeat_asteroid")
+@server.base
+@server.link_client
+@server.client_in_game_in_progress
+async def command(sid, data, client):
+    logging.debug("Got an asteroid!")
+    await client.game.defeat_special(client, False)
+
+
+@sio.on("defeat_black_hole")
+@server.base
+@server.link_client
+@server.client_in_game_in_progress
+async def command(sid, data, client):
+    logging.debug("Got a black hole!")
+    await client.game.defeat_special(client, True)

@@ -8,7 +8,8 @@ from singletons.config import Config
 from singletons.lobby_manager import LobbyManager
 from singletons.sio import Sio
 from utils.command_name_generator import CommandNameGenerator
-from utils.grid import Grid, Button, SliderLikeElement, Actions, Switch
+from utils.grid import Grid, Button, SliderLikeElement, Actions, Switch, GridElement
+from utils.special_commands import DummyAsteroidCommand, DummyBlackHoleCommand, SpecialCommand
 
 
 class Slot:
@@ -22,12 +23,25 @@ class Slot:
         self.instruction = None
         self.next_generation_task = None
 
+        self.defeating_asteroid = False
+        self.defeating_black_hole = False
+
     def sio_slot_info(self):
         return {
             "uid": self.client.uid,
             "ready": self.ready,
             "host": self.host
         }
+
+    async def reset_asteroid(self, after=2):
+        await asyncio.sleep(after)
+        self.defeating_asteroid = False
+        logging.debug("as def")
+
+    async def reset_black_hole(self, after=2):
+        await asyncio.sleep(after)
+        self.defeating_black_hole = False
+        logging.debug("bh def")
 
 
 class Game:
@@ -60,7 +74,9 @@ class Game:
             "death_limit_increase_rate": 0.05,
             "completed_instruction_health_increase": 10,
             "useless_command_health_decrease": 0,
-            "expired_command_health_decrease": 5
+            "expired_command_health_decrease": 5,
+            "asteroid_chance": 0.5,
+            "black_hole_chance": 0.5
         }
 
     @property
@@ -334,6 +350,9 @@ class Game:
                 self.difficulty["expired_command_health_decrease"] + 0.25
             )
 
+            self.difficulty["asteroid_chance"] = 0.25
+            self.difficulty["black_hole_chance"] = 0.25
+
             if self.level > 5:
                 self.difficulty["useless_command_health_decrease"] = min(
                     2.25,
@@ -430,11 +449,23 @@ class Game:
         # Stop the old next generation task if needed
         if slot.next_generation_task is not None and stop_old_task:
             slot.next_generation_task.cancel()
+        old_instruction = slot.instruction
 
-        if Config()["SINGLE_PLAYER"]:
-            # Single player debug mode
+        # Choose between an asteroid/black hole or normal command
+        command = None
+        if random.random() < self.difficulty["asteroid_chance"]:
+            # Asteroid, force target and command
+            target = None
+            command = DummyAsteroidCommand()
+        elif random.random() < self.difficulty["black_hole_chance"]:
+            # Black hole, force target and command
+            target = None
+            command = DummyBlackHoleCommand()
+        elif Config()["SINGLE_PLAYER"]:
+            # Single player debug mode, force target only
             target = slot
         else:
+            # Normal, choose a target
             # Choose a random slot and a random command.
             # We don't do this in `Instruction` because we need to access
             # match's properties and passing match and next_levelinstruction to `Instruction` is not elegant imo
@@ -445,19 +476,21 @@ class Game:
                 # Filter out our slot and chose another one randomly
                 target = random.choice(list(filter(lambda z: z != slot, self.slots)))
 
-        # Find a random command that is not used in any other instructions at the moment and is not the same as the
-        # previous one
-        valid_command = False
-        while not valid_command:
-            valid_command = True
-            command = random.choice(target.grid.objects)
-            print(self.instructions + [slot.instruction])
-            print(slot.instruction)
-            for x in self.instructions + [slot.instruction]:
-                # x is `None` if slot.instructions is None (first generation)
-                if x is not None and x.target_command == command:
-                    valid_command = False
-                    break
+        # Generate a command if needed
+        if command is None:
+            # Find a random command that is not used in any other instructions at the moment and is not the same as the
+            # previous one
+            valid_command = False
+            while not valid_command:
+                valid_command = True
+                command = random.choice(target.grid.objects)
+                print(self.instructions + [slot.instruction])
+                print(slot.instruction)
+                for x in self.instructions + [slot.instruction]:
+                    # x is `None` if slot.instructions is None (first generation)
+                    if x is not None and x.target_command == command:
+                        valid_command = False
+                        break
 
         # Set this slot's instruction and notify the client
         slot.instruction = Instruction(slot, target, command)
@@ -469,7 +502,8 @@ class Game:
         await Sio().emit("command", {
             "text": slot.instruction.text,
             "time": self.difficulty["instructions_time"],
-            "expired": expired
+            "expired": expired,
+            "special_defeated": issubclass(type(old_instruction.target_command), SpecialCommand) if old_instruction is not None else False
         }, room=slot.client.sid)
 
         # Schedule a new generation
@@ -565,7 +599,8 @@ class Game:
         # Check if this command completes an instruction
         instruction_completed = None
         for instruction in self.instructions:
-            if instruction.target_command.name.lower() == command_name.lower() and instruction.value == value:
+            if issubclass(type(instruction.target_command), GridElement) \
+                    and instruction.target_command.name.lower() == command_name.lower() and instruction.value == value:
                 instruction_completed = instruction
 
         if instruction_completed is None:
@@ -573,6 +608,10 @@ class Game:
             self.health -= self.difficulty["useless_command_health_decrease"]
             return
 
+        # Complete this instruction and generate a new one
+        await self.complete_instruction(instruction_completed)
+
+    async def complete_instruction(self, instruction_completed):
         # Remove old instruction
         self.instructions.remove(instruction_completed)
 
@@ -591,7 +630,6 @@ class Game:
         else:
             # This was an useful command! Force new generation outside the loop
             await self.generate_instruction(instruction_completed.source, expired=False, stop_old_task=True)
-            # await Sio().emit('flip_grid', room=self.sio_room)
             await self.notify_health()
 
     async def dispose(self):
@@ -624,6 +662,45 @@ class Game:
 
         logging.info("{} match disposed".format(self.uuid))
 
+    async def defeat_special(self, client, black_hole=False):
+        # Playing/player checks
+        if not self.playing:
+            raise RuntimeError("Game not in progress!")
+        slot = self.get_slot(client)
+        if slot is None:
+            raise ValueError("Client not in match")
+
+        # Defeat thing
+        if black_hole:
+            slot.defeating_black_hole = True
+        else:
+            slot.defeating_asteroid = True
+
+        # Check if everyone is defeating
+        all_defeated = True
+        for s in self.slots:
+            if (not s.defeating_black_hole and black_hole) or (not s.defeating_asteroid and not black_hole):
+                all_defeated = False
+                break
+
+        # Everyone has defeated asteroid/black hole!
+        if all_defeated:
+            logging.debug("All defeated!")
+
+            # Check if there's a special command (we may have more than once)
+            instructions_completed = []
+            for instruction in self.instructions:
+                if (type(instruction.target_command) is DummyBlackHoleCommand and black_hole) \
+                        or (type(instruction.target_command) is DummyAsteroidCommand and not black_hole):
+                    instructions_completed.append(instruction)
+
+            # Complete all instructions (two loops because we're removing items from self.instructions)
+            for instruction in instructions_completed:
+                logging.debug("SPECIAL DONE!")
+                await self.complete_instruction(instruction)
+
+        # Reset defeating back to False after two seconds
+        asyncio.Task(slot.reset_black_hole() if black_hole else slot.reset_asteroid())
 
 
 

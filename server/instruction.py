@@ -1,6 +1,7 @@
 import random
 
-from utils.grid import Button, SliderLikeElement, Switch, Actions
+from utils.grid import Button, SliderLikeElement, Switch, Actions, GridElement
+from utils.special_commands import DummyBlackHoleCommand, DummyAsteroidCommand, SpecialCommand
 
 
 class Instruction:
@@ -14,6 +15,9 @@ class Instruction:
     def generate_value(self):
         if type(self.target_command) is Button:
             # No extra actions required for buttons
+            return None
+        elif issubclass(type(self.target_command), SpecialCommand):
+            # Same for asteroids and black holes
             return None
         elif issubclass(type(self.target_command), SliderLikeElement):
             # For slider-like elements, pick a new random value between min and max, excluding the current one
@@ -48,7 +52,7 @@ class Instruction:
                 sentences += ["Diminuire {name} al minimo", "Impostare {name} al minimo"]
         elif type(self.target_command) is Actions:
             sentences = ["{value} {name}"]
-        else:
+        elif type(self.target_command) is Switch:
             # Switch
             if self.value:
                 sentences = [
@@ -62,7 +66,14 @@ class Instruction:
                     "Disinnestare {name}",
                     "Spegnere {name}",
                 ]
+        elif type(self.target_command) is DummyAsteroidCommand:
+            sentences = ["Asteroide! (scuotere tutti il mouse)"]
+        elif type(self.target_command) is DummyBlackHoleCommand:
+            sentences = ["Buco nero! (premere tutti la barra spazio più volte)"]
+        else:
+            raise ValueError("Invalid command type")
 
         # Choose a random sentence form the possible ones and format it
         sentence = random.choice(sentences)
-        return sentence.format(name=self.target_command.name, value=self.value).capitalize()
+        name = self.target_command.name if issubclass(type(self.target_command), GridElement) else ""
+        return sentence.format(name=name, value=self.value).capitalize()
