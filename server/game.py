@@ -276,7 +276,7 @@ class Game:
         :return:
         """
         # NOTE:
-        if len(self.slots) > 1 and all([x.ready for x in self.slots]): # or True:
+        if len(self.slots) > 1 and all([x.ready for x in self.slots]) or True:
             # Game starts
             self.playing = True
 
@@ -309,8 +309,9 @@ class Game:
         # Go to next level
         self.level += 1
 
-        # Reset health
+        # Reset health and death limit
         self.health = self.STARTING_HEALTH
+        self.death_limit = 0
 
         # Change difficulty settings if this is not the first level
         if self.level > 0:
@@ -423,16 +424,16 @@ class Game:
         if slot.next_generation_task is not None and stop_old_task:
             slot.next_generation_task.cancel()
 
-        # Choose a random slot and a random command.
-        # We don't do this in `Instruction` because we need to access
-        # match's properties and passing match and next_levelinstruction to `Instruction` is not elegant imo
-        if random.randint(0, 5) == 0:
-            # 1/5 chance of getting a command in our grid
-            target = slot
-        else:
-            # Filter out our slot and chose another one randomly
-            target = random.choice(list(filter(lambda z: z != slot, self.slots)))
-        # target = slot
+        # # Choose a random slot and a random command.
+        # # We don't do this in `Instruction` because we need to access
+        # # match's properties and passing match and next_levelinstruction to `Instruction` is not elegant imo
+        # if random.randint(0, 5) == 0:
+        #     # 1/5 chance of getting a command in our grid
+        #     target = slot
+        # else:
+        #     # Filter out our slot and chose another one randomly
+        #     target = random.choice(list(filter(lambda z: z != slot, self.slots)))
+        target = slot
 
         # Find a random command that is not used in any other instructions at the moment and is not the same as the
         # previous one
@@ -488,8 +489,11 @@ class Game:
             # Drain health every two seconds second
             await asyncio.sleep(self.HEALTH_LOOP_RATE)
             self.health -= self.difficulty["health_drain_rate"] * self.HEALTH_LOOP_RATE
-            self.death_limit += min(90, self.difficulty["death_limit_increase_rate"] * self.HEALTH_LOOP_RATE)
-            logging.debug("Draining health, new value {}".format(self.health))
+            self.death_limit = min(
+                90,
+                self.death_limit + self.difficulty["death_limit_increase_rate"] * self.HEALTH_LOOP_RATE
+            )
+            logging.debug("Draining health, new value {} and death limit is {}".format(self.health, self.death_limit))
 
             if self.health <= self.death_limit:
                 # Game over
