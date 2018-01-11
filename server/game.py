@@ -503,8 +503,10 @@ class Game:
             "text": slot.instruction.text,
             "time": self.difficulty["instructions_time"],
             "expired": expired,
-            "special_defeated": issubclass(type(old_instruction.target_command), SpecialCommand) if old_instruction is not None else False
         }, room=slot.client.sid)
+
+        if old_instruction is not None and issubclass(type(old_instruction.target_command), SpecialCommand):
+            await Sio().emit("safe", room=self.sio_room)
 
         # Schedule a new generation
         slot.next_generation_task = asyncio.Task(self.schedule_generation(slot, self.difficulty["instructions_time"]))
@@ -611,12 +613,13 @@ class Game:
         # Complete this instruction and generate a new one
         await self.complete_instruction(instruction_completed)
 
-    async def complete_instruction(self, instruction_completed):
+    async def complete_instruction(self, instruction_completed, increase_health=True):
         # Remove old instruction
         self.instructions.remove(instruction_completed)
 
-        # Increase health
-        self.health += self.difficulty["completed_instruction_health_increase"]
+        # Increase health if needed
+        if increase_health:
+            self.health += self.difficulty["completed_instruction_health_increase"]
 
         # Broadcast new health or next level
         if self.health >= 100:
@@ -697,7 +700,7 @@ class Game:
             # Complete all instructions (two loops because we're removing items from self.instructions)
             for instruction in instructions_completed:
                 logging.debug("SPECIAL DONE!")
-                await self.complete_instruction(instruction)
+                await self.complete_instruction(instruction, increase_health=False)
 
         # Reset defeating back to False after two seconds
         asyncio.Task(slot.reset_black_hole() if black_hole else slot.reset_asteroid())
