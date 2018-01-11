@@ -45,6 +45,7 @@ class Game:
 
         self.slots = []
         self.playing = False
+        self.disposing = False
         self.instructions = []
 
         self.level = -1
@@ -125,7 +126,8 @@ class Game:
 
         logging.info("{} joined game {}".format(client.sid, self.uuid))
 
-        await self.start()
+        if Config()["SINGLE_PLAYER"]:
+            await self.start()
 
     async def remove_client(self, client):
         """
@@ -155,17 +157,21 @@ class Game:
         # Leave sio room
         Sio().leave_room(client.sid, self.sio_room)
 
-        # Notify leaving client
-        # await Sio().emit("game_leave_success", room=client.sid)
+        if self.playing and not self.disposing:
+            # If we are in game, disconnect everyone
+            try:
+                await Sio().emit('player_disconnected', room=self.sio_room)
+                await self.dispose()
+            except RuntimeError:
+                # Already disposing
+                pass
+        elif not self.playing:
+            # Choose another host if host left
+            if slot_to_remove.host and len(self.slots) > 0:
+                new_host = random.choice(self.slots)
+                new_host.host = True
+                logging.info("{} chosen as new host in game {}".format(client.sid, self.uuid))
 
-        # Choose another host if host left
-        if slot_to_remove.host and len(self.slots) > 0:
-            new_host = random.choice(self.slots)
-            new_host.host = True
-            logging.info("{} chosen as new host in game {}".format(client.sid, self.uuid))
-
-        # Do lobby stuff if the game is not in progress
-        if not self.playing:
             # Notify other clients
             await self.notify_game()
 
@@ -175,6 +181,7 @@ class Game:
             # Dispose room if everyone left
             if self.is_empty:
                 await self.dispose()
+
         logging.info("{} left game {}".format(client.sid, self.uuid))
 
     @property
@@ -592,8 +599,10 @@ class Game:
         Disposes the current room
         :return:
         """
-        # Remove from lobby
-        await LobbyManager().remove_game(self)
+        # Make sure the match is not already disposing
+        if self.disposing:
+            raise RuntimeError("The match is already disposing")
+        self.disposing = True
 
         # Cancel all pending next generation tasks
         for slot in self.slots:
@@ -605,6 +614,13 @@ class Game:
         if self.health_drain_task is not None:
             logging.debug("Health drain task cancelled")
             self.health_drain_task.cancel()
+
+        # Make everyone leave the game
+        for slot in self.slots:
+            await slot.client.leave_game()
+
+        # Remove from lobby
+        await LobbyManager().remove_game(self)
 
         logging.info("{} match disposed".format(self.uuid))
 
