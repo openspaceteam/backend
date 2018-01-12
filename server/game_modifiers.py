@@ -18,6 +18,9 @@ class GameModifier:
     def grid_post_processor(self, grid):
         return
 
+    def difficulty_post_processor(self, diff):
+        return diff
+
 
 class FlipGrid(GameModifier):
     DESCRIPTION = "Matrice di riflessione attivata"
@@ -45,3 +48,41 @@ class Symbols(GameModifier):
                     o.additional_data["symbol"] = True
                     o.name = random.choice(available_symbols)
                     available_symbols.remove(o.name)
+
+
+class Alien(GameModifier):
+    DESCRIPTION = "Errore di traduzione"
+
+    def grid_post_processor(self, grid):
+        total_alien = 0
+
+        # At least 2 commands with wrong name
+        while total_alien == 0:
+            for o in grid.objects:
+                if random.randrange(0, 2) == 0:
+                    total_alien += 1
+                    o.additional_data["alien"] = True
+                if total_alien >= 2:
+                    break
+
+
+class AsteroidsField(GameModifier):
+    DESCRIPTION = "Campo di asteroidi in arrivo"
+
+    def difficulty_post_processor(self, diff):
+        print(diff)
+        diff["asteroid_chance"] *= 3
+        diff["black_hole_chance"] /= 2
+        diff["special_command_cooldown"] //= 2
+        return diff
+
+
+class BlackHolesField(GameModifier):
+    DESCRIPTION = "Campo di buchi neri in arrivo"
+
+    def difficulty_post_processor(self, diff):
+        print(diff)
+        diff["black_hole_chance"] *= 3
+        diff["asteroid_chance"] /= 2
+        diff["special_command_cooldown"] //= 2
+        return diff

@@ -3,7 +3,7 @@ import logging
 import random
 
 from server import Client
-from server.game_modifiers import FlipGrid, Symbols
+from server.game_modifiers import FlipGrid, Symbols, BlackHolesField, AsteroidsField, Alien
 from server.instruction import Instruction
 from singletons.config import Config
 from singletons.lobby_manager import LobbyManager
@@ -27,6 +27,8 @@ class Slot:
         self.defeating_asteroid = False
         self.defeating_black_hole = False
 
+        self.special_command_cooldown = 0
+
     def sio_slot_info(self):
         return {
             "uid": self.client.uid,
@@ -37,12 +39,10 @@ class Slot:
     async def reset_asteroid(self, after=2):
         await asyncio.sleep(after)
         self.defeating_asteroid = False
-        logging.debug("as def")
 
     async def reset_black_hole(self, after=2):
         await asyncio.sleep(after)
         self.defeating_black_hole = False
-        logging.debug("bh def")
 
 
 class Game:
@@ -69,19 +69,23 @@ class Game:
 
         self.health_drain_task = None
 
+        self.previous_game_modifier = None
         self.game_modifier = None
         self.game_modifier_task = None
 
         self.difficulty = {
-            "instructions_time": 25,
-            "health_drain_rate": 0.5,
-            "death_limit_increase_rate": 0.05,
-            "completed_instruction_health_increase": 10,
-            "useless_command_health_decrease": 0,
-            "expired_command_health_decrease": 5,
-            "asteroid_chance": 0,
-            "black_hole_chance": 0
+            "instructions_time": 25,                        # seconds to complete an instruction
+            "health_drain_rate": 0.5,                       # health drain per second
+            "death_limit_increase_rate": 0.05,              # death barrier progress per second
+            "completed_instruction_health_increase": 10,    # health increase per instruction completed
+            # "useless_command_health_decrease": 0,         # health decrease per useless instruction (removed)
+            "expired_command_health_decrease": 5,           # health decrease per instruction failed
+            "asteroid_chance": 0,                           # chance of getting an asteroid (0.0 - 1.00)
+            "black_hole_chance": 0,                         # chance of getting a black hole (0.0 - 1.00)
+            "special_command_cooldown": 3,                  # instructions between special commands (asteroid and bh)
+            "game_modifier_chance": 0.1                     # chance of getting a game modifier (0.0 - 1.00)
         }
+        self.vanilla_difficulty = self.difficulty
 
     @property
     def uuid(self):
@@ -346,6 +350,10 @@ class Game:
 
         # Change difficulty settings if this is not the first level
         if self.level > 0:
+            # Remove any eventual game modifier difficulty changes
+            logging.debug("VANILLA DIFF: {}".format(self.vanilla_difficulty))
+            self.difficulty = self.vanilla_difficulty
+
             self.difficulty["instructions_time"] = max(7.0, self.difficulty["instructions_time"] - 2.75)
             self.difficulty["health_drain_rate"] = max(1.75, self.difficulty["health_drain_rate"] - 0.35)
             self.difficulty["death_limit_increase_rate"] = max(1.8, self.difficulty["death_limit_increase_rate"] + 0.35)
@@ -358,24 +366,35 @@ class Game:
                 self.difficulty["expired_command_health_decrease"] + 0.25
             )
 
-            self.difficulty["asteroid_chance"] = 0.09
-            self.difficulty["black_hole_chance"] = 0.09
+            self.difficulty["asteroid_chance"] = 0.15
+            self.difficulty["black_hole_chance"] = 0.15
 
-            if self.level > 5:
-                self.difficulty["useless_command_health_decrease"] = min(
-                    2.25,
-                    self.difficulty["useless_command_health_decrease"] + 0.1
-                )
+            # if self.level > 5:
+            #     self.difficulty["useless_command_health_decrease"] = min(
+            #         2.25,
+            #         self.difficulty["useless_command_health_decrease"] + 0.1
+            #     )
+            self.difficulty["game_modifier_chance"] = min(0.75, self.difficulty["game_modifier_chance"] + 0.1)
             logging.debug("Current difficulty: {}".format(self.difficulty))
 
             # Game modifiers
-            if random.randint(0, 4):
-                cls = random.choice([Symbols, FlipGrid])
+            if random.random() < self.difficulty["game_modifier_chance"]:
+                self.previous_game_modifier = self.game_modifier
+                cls = random.choice(
+                    list(filter(
+                        lambda x: x != self.previous_game_modifier,
+                        [Symbols, FlipGrid, AsteroidsField, BlackHolesField, Alien]
+                    ))
+                )
                 self.game_modifier = cls(self)
 
         # Set all `intro done` to false
         for i in self.slots:
             i.intro_done = False
+
+        # Game modifier difficulty change
+        if self.game_modifier is not None:
+            self.difficulty = self.game_modifier.difficulty_post_processor(self.difficulty)
 
         # Generate grids
         await self.generate_grids()
@@ -475,14 +494,16 @@ class Game:
 
         # Choose between an asteroid/black hole or normal command
         command = None
-        if random.random() < self.difficulty["asteroid_chance"]:
+        if random.random() < self.difficulty["asteroid_chance"] and slot.special_command_cooldown <= 0:
             # Asteroid, force target and command
             target = None
             command = DummyAsteroidCommand()
-        elif random.random() < self.difficulty["black_hole_chance"]:
+            slot.special_command_cooldown = self.difficulty["special_command_cooldown"] + 1
+        elif random.random() < self.difficulty["black_hole_chance"] and slot.special_command_cooldown <= 0:
             # Black hole, force target and command
             target = None
             command = DummyBlackHoleCommand()
+            slot.special_command_cooldown = self.difficulty["special_command_cooldown"] + 1
         elif Config()["SINGLE_PLAYER"]:
             # Single player debug mode, force target only
             target = slot
@@ -497,6 +518,10 @@ class Game:
             else:
                 # Filter out our slot and chose another one randomly
                 target = random.choice(list(filter(lambda z: z != slot, self.slots)))
+
+        # Decrease special command cooldown
+        slot.special_command_cooldown = max(0, slot.special_command_cooldown - 1)
+        logging.debug("SPECIAL {}".format(slot.special_command_cooldown))
 
         # Generate a command if needed
         if command is None:
@@ -629,7 +654,7 @@ class Game:
 
         if instruction_completed is None:
             # Useless command, apply penality
-            self.health -= self.difficulty["useless_command_health_decrease"]
+            # self.health -= self.difficulty["useless_command_health_decrease"]
             return
 
         # Complete this instruction and generate a new one
