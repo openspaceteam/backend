@@ -1,3 +1,4 @@
+import logging
 import random
 
 from utils.grid import Button, SliderLikeElement, Switch, Actions, GridElement
@@ -69,11 +70,18 @@ class Instruction:
         elif type(self.target_command) is DummyAsteroidCommand:
             sentences = ["Asteroide! (scuotere tutti il mouse)"]
         elif type(self.target_command) is DummyBlackHoleCommand:
-            sentences = ["Buco nero! (premere tutti la barra spazio più volte)"]
+            sentences = ["Buco nero! (premere tutti invio più volte)"]
         else:
             raise ValueError("Invalid command type")
 
         # Choose a random sentence form the possible ones and format it
         sentence = random.choice(sentences)
-        name = self.target_command.name if issubclass(type(self.target_command), GridElement) else ""
-        return sentence.format(name=name, value=self.value).capitalize()
+        if issubclass(type(self.target_command), GridElement):
+            if "symbol" in self.target_command.additional_data:
+                name = "${}".format(self.target_command.name)
+            else:
+                name = self.target_command.name
+        else:
+            name = ""
+        s = sentence.format(name=name, value=self.value.capitalize() if type(self.value) is str else self.value)
+        return s

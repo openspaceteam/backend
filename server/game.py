@@ -3,6 +3,7 @@ import logging
 import random
 
 from server import Client
+from server.game_modifiers import FlipGrid, Symbols
 from server.instruction import Instruction
 from singletons.config import Config
 from singletons.lobby_manager import LobbyManager
@@ -68,6 +69,9 @@ class Game:
 
         self.health_drain_task = None
 
+        self.game_modifier = None
+        self.game_modifier_task = None
+
         self.difficulty = {
             "instructions_time": 25,
             "health_drain_rate": 0.5,
@@ -75,8 +79,8 @@ class Game:
             "completed_instruction_health_increase": 10,
             "useless_command_health_decrease": 0,
             "expired_command_health_decrease": 5,
-            "asteroid_chance": 0.5,
-            "black_hole_chance": 0.5
+            "asteroid_chance": 0,
+            "black_hole_chance": 0
         }
 
     @property
@@ -324,6 +328,10 @@ class Game:
         if self.health_drain_task is not None:
             self.health_drain_task.cancel()
 
+        # Stop game modifier task
+        if self.game_modifier_task is not None:
+            self.game_modifier_task.cancel()
+
         # Stop all command generation loop tasks
         for slot in self.slots:
             if slot.next_generation_task is not None:
@@ -350,8 +358,8 @@ class Game:
                 self.difficulty["expired_command_health_decrease"] + 0.25
             )
 
-            self.difficulty["asteroid_chance"] = 0.25
-            self.difficulty["black_hole_chance"] = 0.25
+            self.difficulty["asteroid_chance"] = 0.09
+            self.difficulty["black_hole_chance"] = 0.09
 
             if self.level > 5:
                 self.difficulty["useless_command_health_decrease"] = min(
@@ -360,7 +368,10 @@ class Game:
                 )
             logging.debug("Current difficulty: {}".format(self.difficulty))
 
-        # TODO: Game modifiers
+            # Game modifiers
+            if random.randint(0, 4):
+                cls = random.choice([Symbols, FlipGrid])
+                self.game_modifier = cls(self)
 
         # Set all `intro done` to false
         for i in self.slots:
@@ -369,7 +380,9 @@ class Game:
         # Generate grids
         await self.generate_grids()
 
-        # TODO: Broadcast game modifiers (if not first level?)
+        # Start game modifier task if needed
+        if self.game_modifier is not None:
+            self.game_modifier_task = asyncio.Task(self.game_modifier.task())
 
     async def generate_grids(self):
         """
@@ -381,7 +394,16 @@ class Game:
         name_generator = CommandNameGenerator()
 
         for slot in self.slots:
-            slot.grid = Grid(name_generator)
+            g = Grid(name_generator)
+
+            # Game modifier post processor if needed
+            if self.game_modifier is not None:
+                try:
+                    self.game_modifier.grid_post_processor(g)
+                except NotImplementedError:
+                    pass
+
+            slot.grid = g
 
     async def intro_done(self, client):
         """
@@ -577,7 +599,7 @@ class Game:
         # Make sure the command is valid
         command = None
         for c in slot.grid.objects:
-            if c.name.lower() == command_name:
+            if c.name == command_name:
                 command = c
         if command is None:
             raise ValueError("Command not found")
@@ -602,7 +624,7 @@ class Game:
         instruction_completed = None
         for instruction in self.instructions:
             if issubclass(type(instruction.target_command), GridElement) \
-                    and instruction.target_command.name.lower() == command_name.lower() and instruction.value == value:
+                    and instruction.target_command.name == command_name and instruction.value == value:
                 instruction_completed = instruction
 
         if instruction_completed is None:
@@ -623,12 +645,11 @@ class Game:
 
         # Broadcast new health or next level
         if self.health >= 100:
-            # TODO: Game modifiers
             await self.next_level()
             await Sio().emit("next_level", {
                 "level": self.level,
-                "modifier": None,
-                "text": "Nessuna anomalia rilevata"
+                "modifier": self.game_modifier is not None,
+                "text": self.game_modifier.DESCRIPTION if self.game_modifier is not None else "Nessuna anomalia rilevata"
             }, room=self.sio_room)
         else:
             # This was an useful command! Force new generation outside the loop
@@ -655,6 +676,11 @@ class Game:
         if self.health_drain_task is not None:
             logging.debug("Health drain task cancelled")
             self.health_drain_task.cancel()
+
+        # Also game modifier task
+        if self.game_modifier_task is not None:
+            logging.debug("Game modifier task cancelled")
+            self.game_modifier_task.cancel()
 
         # Make everyone leave the game
         for slot in self.slots:

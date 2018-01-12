@@ -138,7 +138,11 @@ async def intro_done(sid, _, client):
 @server.args(("name", str))
 async def command(sid, data, client):
     print("Got", data)
-    await client.game.do_command(client, data["name"], data["value"] if "value" in data else None)
+    try:
+        await client.game.do_command(client, data["name"], data["value"] if "value" in data else None)
+    except ValueError:
+        # Invalid command
+        pass
 
 
 @sio.on("defeat_asteroid")

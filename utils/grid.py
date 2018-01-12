@@ -23,14 +23,18 @@ class GridElement:
         self.w = w
         self.h = h
         self.name = name
+        self.additional_data = {}     # other stuff that will be json serialized along with everything else
 
     def __dict__(self):
         _dict = {
-            "x": self.x,
-            "y": self.y,
-            "w": self.w,
-            "h": self.h,
-            "name": self.name,
+            **{
+                "x": self.x,
+                "y": self.y,
+                "w": self.w,
+                "h": self.h,
+                "name": self.name,
+            },
+            **self.additional_data
         }
         if type(self) in TYPES:
             _dict["type"] = TYPES[type(self)]
