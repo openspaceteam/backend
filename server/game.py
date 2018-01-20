@@ -584,7 +584,7 @@ class Game:
             self.health -= self.difficulty["health_drain_rate"] * self.HEALTH_LOOP_RATE
             self.death_limit = min(
                 90,
-                self.death_limit + self.difficulty["death_limit_increase_rate"] * 100 * self.HEALTH_LOOP_RATE
+                self.death_limit + self.difficulty["death_limit_increase_rate"] * self.HEALTH_LOOP_RATE
             )
             logging.debug("Draining health, new value {} and death limit is {}".format(self.health, self.death_limit))
 
