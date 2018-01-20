@@ -374,7 +374,7 @@ class Game:
             #         2.25,
             #         self.difficulty["useless_command_health_decrease"] + 0.1
             #     )
-            self.difficulty["game_modifier_chance"] = min(0.75, self.difficulty["game_modifier_chance"] + 0.1)
+            self.difficulty["game_modifier_chance"] = min(1.0, self.difficulty["game_modifier_chance"] + 0.25)
             logging.debug("Current difficulty: {}".format(self.difficulty))
 
             # Game modifiers
