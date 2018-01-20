@@ -174,10 +174,11 @@ class Grid:
 
         # if you picked a bigsquare, decide how big it will be.
         if _type == layout_cells.BIG_SQUARE:
-            if y <= 1 and fsr >= 1 and x <= 1:
-                length = random.randint(2, 3)
-            else:
-                length = 2
+            # if y <= 1 and fsr >= 1 and x <= 1:
+            #     length = random.randint(2, 3)
+            # else:
+            #     length = 2
+            length = 2
 
         print("and the length will be %s" % length)
 

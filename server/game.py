@@ -354,15 +354,15 @@ class Game:
             logging.debug("VANILLA DIFF: {}".format(self.vanilla_difficulty))
             self.difficulty = self.vanilla_difficulty
 
-            self.difficulty["instructions_time"] = max(7.0, self.difficulty["instructions_time"] - 2.75)
-            self.difficulty["health_drain_rate"] = max(1.75, self.difficulty["health_drain_rate"] - 0.35)
-            self.difficulty["death_limit_increase_rate"] = max(1.8, self.difficulty["death_limit_increase_rate"] + 0.35)
+            self.difficulty["instructions_time"] = max(7.0, self.difficulty["instructions_time"] - 1.25)
+            self.difficulty["health_drain_rate"] = min(1.25, self.difficulty["health_drain_rate"] + 0.35)
+            self.difficulty["death_limit_increase_rate"] = min(1.25, self.difficulty["death_limit_increase_rate"] + 0.15)
             self.difficulty["completed_instruction_health_increase"] = max(
                 3.0,
                 self.difficulty["completed_instruction_health_increase"] - 0.5
             )
             self.difficulty["expired_command_health_decrease"] = min(
-                20.0,
+                11.5,
                 self.difficulty["expired_command_health_decrease"] + 0.25
             )
 
@@ -584,7 +584,7 @@ class Game:
             self.health -= self.difficulty["health_drain_rate"] * self.HEALTH_LOOP_RATE
             self.death_limit = min(
                 90,
-                self.death_limit + self.difficulty["death_limit_increase_rate"] * self.HEALTH_LOOP_RATE
+                self.death_limit + self.difficulty["death_limit_increase_rate"] * 100 * self.HEALTH_LOOP_RATE
             )
             logging.debug("Draining health, new value {} and death limit is {}".format(self.health, self.death_limit))
 
