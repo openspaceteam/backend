@@ -46,6 +46,6 @@ Socket (ws), so you'll need an SSL certificate. You can get one quite easilly wi
 [There's a sample nginx config in nginx.conf.](https://github.com/openspaceteam/backend/blob/master/nginx.conf)
 
 ## License
-This project is licensed under the GNU AGPL 3 License.  
+This project is licensed under the GNU AGPL 3 License.
 See the "LICENSE" file for more information.
 
