@@ -43,9 +43,9 @@ $ source .pyenv/bin/activate
 We highly recommend using nginx as a reverse proxy with the backend. We 
 also recommend using Web Socket Secure (wss) rather than a normal Web 
 Socket (ws), so you'll need an SSL certificate. You can get one quite easilly with [Let's Encrypt](https://letsencrypt.org/). [Cloudflare should work as well.](https://support.cloudflare.com/hc/en-us/articles/200169466-Can-I-use-Cloudflare-with-WebSockets-)  
-There's a sample nginx config in nginx.conf.
+[There's a sample nginx config in nginx.conf.](https://github.com/openspaceteam/backend/blob/master/nginx.conf)
 
 ## License
-This project is licensed under the GNU AGPL 3 License.
+This project is licensed under the GNU AGPL 3 License.  
 See the "LICENSE" file for more information.
 
