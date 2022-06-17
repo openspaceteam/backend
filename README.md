@@ -13,11 +13,14 @@ few unimplemented features, but what's been implemented works quite
 well.  
 There are few comments and some files need a bit of refactoring.  
 
-## Requirements
+## Installing (Docker)
+Check out the [compose](https://github.com/openspaceteam/compose) repo.
+
+## Requirements for manual installation
 - Python 3.6 (doesn't work in <= 3.5 nor 2)
 - An SSL certificate (not required but highly recommended)
 
-## Installing
+## Manual installation
 ```bash
 $ git clone https://github.com/openspaceteam/backend.git
 $ cd backend
